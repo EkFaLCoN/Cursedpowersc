@@ -2,28 +2,52 @@ name: Build
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Kodu indir
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Java 25 kur
+      - name: Extract source zip (if present)
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Zip bulundu: $ZIP_FILE — açılıyor..."
+            unzip -o -q "$ZIP_FILE" -d extracted-src
+          else
+            echo "Zip bulunamadı, repo zaten açık dosyalar içeriyor varsayılıyor."
+          fi
+
+      - name: Locate pom.xml
+        id: findpom
+        run: |
+          POM_PATH=$(find . -maxdepth 4 -iname "pom.xml" | head -n 1)
+          if [ -z "$POM_PATH" ]; then
+            echo "pom.xml hiçbir yerde bulunamadı!" >&2
+            exit 1
+          fi
+          POM_DIR=$(dirname "$POM_PATH")
+          echo "pom.xml bulundu: $POM_PATH"
+          echo "dir=$POM_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '25'
-          cache: 'maven'
+          distribution: 'temurin'
 
-      - name: Maven ile derle
-        run: mvn -B clean package
+      - name: Build with Maven
+        working-directory: ${{ steps.findpom.outputs.dir }}
+        run: mvn -B clean package --file pom.xml
 
-      - name: Jar dosyasini yukle
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CursedPowers
-          path: target/*.jar
+          name: guclendirici-jar
+          path: ${{ steps.findpom.outputs.dir }}/target/*.jar
